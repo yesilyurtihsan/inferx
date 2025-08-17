@@ -1,0 +1,10 @@
+# UV ignore file - excludes files from UV operations
+*.pyc
+__pycache__/
+*.egg-info/
+.git/
+.pytest_cache/
+.coverage
+.mypy_cache/
+dist/
+build/
