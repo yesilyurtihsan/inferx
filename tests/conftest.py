@@ -23,6 +23,39 @@ def mock_onnx_model_path(temp_dir):
 
 
 @pytest.fixture
+def mock_openvino_model_path(temp_dir):
+    """Provide a mock OpenVINO model file path"""
+    xml_path = temp_dir / "test_model.xml"
+    bin_path = temp_dir / "test_model.bin"
+    
+    # Create empty files
+    xml_path.touch()
+    bin_path.touch()
+    
+    return xml_path
+
+
+@pytest.fixture
+def mock_yolo_onnx_path(temp_dir):
+    """Provide a mock YOLO ONNX model file path"""
+    model_path = temp_dir / "yolov8n.onnx"
+    model_path.touch()
+    return model_path
+
+
+@pytest.fixture
+def mock_yolo_openvino_path(temp_dir):
+    """Provide a mock YOLO OpenVINO model file path"""
+    xml_path = temp_dir / "yolov8n.xml"
+    bin_path = temp_dir / "yolov8n.bin"
+    
+    xml_path.touch()
+    bin_path.touch()
+    
+    return xml_path
+
+
+@pytest.fixture
 def mock_image_path(temp_dir):
     """Provide a mock image file path"""
     image_path = temp_dir / "test_image.jpg"
@@ -118,6 +151,65 @@ output:
     return config_path
 
 
+@pytest.fixture
+def mock_inferx_config(temp_dir):
+    """Provide a mock InferX configuration file"""
+    config_content = """
+# Test InferX Configuration
+model_detection:
+  yolo_keywords:
+    - "yolo"
+    - "yolov8"
+    - "test_yolo"
+
+device_mapping:
+  auto: "CPU"
+  gpu: "GPU"
+  cpu: "CPU"
+
+model_defaults:
+  yolo:
+    input_size: 640
+    confidence_threshold: 0.25
+    nms_threshold: 0.45
+    class_names:
+      - "person"
+      - "car"
+      - "test_class"
+
+performance_presets:
+  test_preset:
+    openvino:
+      performance_hint: "LATENCY"
+      num_streams: 1
+    onnx:
+      providers: ["CPUExecutionProvider"]
+"""
+    
+    config_path = temp_dir / "inferx_config.yaml"
+    with open(config_path, 'w') as f:
+        f.write(config_content)
+    
+    return config_path
+
+
+@pytest.fixture
+def mock_openvino_config():
+    """Provide a mock OpenVINO configuration dictionary"""
+    return {
+        "device": "CPU",
+        "runtime": "openvino",
+        "performance_hint": "LATENCY",
+        "num_streams": 1,
+        "num_threads": 4,
+        "preprocessing": {
+            "target_size": [640, 640],
+            "normalize": True,
+            "color_format": "RGB"
+        }
+    }
+
+
 # Test markers for different test categories
 def pytest_configure(config):
     """Configure pytest markers"""
@@ -132,6 +224,12 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "cli: Tests for CLI functionality"
+    )
+    config.addinivalue_line(
+        "markers", "openvino: Tests for OpenVINO functionality"
+    )
+    config.addinivalue_line(
+        "markers", "config: Tests for configuration management"
     )
 
 

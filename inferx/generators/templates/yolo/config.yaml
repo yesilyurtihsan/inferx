@@ -1,0 +1,17 @@
+# YOLO Model Configuration
+model:
+  path: "models/yolo_model.onnx"
+  type: "yolo"
+
+inference:
+  device: "auto"
+  runtime: "auto"
+  confidence_threshold: 0.25
+  nms_threshold: 0.45
+  input_size: 640
+
+preprocessing:
+  target_size: [640, 640]
+  normalize: true
+  color_format: "RGB"
+  maintain_aspect_ratio: true

@@ -2,6 +2,21 @@
 
 from .base import BaseInferencer
 from .onnx_inferencer import ONNXInferencer
+from .openvino_inferencer import OpenVINOInferencer
 from .yolo import YOLOInferencer
+from .yolo_openvino import YOLOOpenVINOInferencer
 
-__all__ = ["BaseInferencer", "ONNXInferencer", "YOLOInferencer"]
+
+inferencer_dict = {
+    "onnx": ONNXInferencer,
+    "openvino": OpenVINOInferencer,
+    "yolo": YOLOInferencer,
+    "yolo_openvino": YOLOOpenVINOInferencer
+}
+__all__ = [
+    "BaseInferencer", 
+    "ONNXInferencer", 
+    "OpenVINOInferencer",
+    "YOLOInferencer", 
+    "YOLOOpenVINOInferencer"
+]

@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from .inferencers.base import BaseInferencer
 from .inferencers.onnx_inferencer import ONNXInferencer
+from .inferencers.openvino_inferencer import OpenVINOInferencer
 from .inferencers.yolo import YOLOInferencer
+from .inferencers.yolo_openvino import YOLOOpenVINOInferencer
+from .config import get_config, InferXConfig
 
 
 class InferenceEngine:
@@ -21,7 +24,8 @@ class InferenceEngine:
         model_type: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
         device: str = "auto",
-        runtime: str = "auto"
+        runtime: str = "auto",
+        config_path: Optional[Union[str, Path]] = None
     ):
         """Initialize the inference engine
         
@@ -31,44 +35,90 @@ class InferenceEngine:
             config: Configuration dictionary
             device: Device to run on (auto, cpu, gpu)
             runtime: Runtime to use (auto, onnx, openvino)
+            config_path: Path to configuration file
         """
         self.model_path = Path(model_path)
-        self.model_type = model_type or self._detect_model_type()
-        self.config = config or {}
         self.device = device
         self.runtime = runtime
         
-        # Update config with runtime settings
-        self.config.update({
-            "device": device,
-            "runtime": runtime
-        })
+        # Load global configuration
+        self.global_config = get_config(config_path)
+        
+        # Detect model type using configuration
+        self.model_type = model_type or self.global_config.detect_model_type(
+            self.model_path, runtime
+        )
+        
+        # Build final configuration
+        self.config = self._build_config(config)
         
         self.inferencer = self._create_inferencer()
     
-    def _detect_model_type(self) -> str:
-        """Auto-detect model type from file path or metadata"""
-        file_extension = self.model_path.suffix.lower()
+    def _build_config(self, user_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build final configuration by merging defaults with user config
         
-        if file_extension == '.onnx':
-            # Try to detect if it's a YOLO model based on filename
-            model_name = self.model_path.stem.lower()
-            if any(keyword in model_name for keyword in ['yolo', 'yolov', 'yolov8']):
-                return "yolo"
+        Args:
+            user_config: User-provided configuration
+            
+        Returns:
+            Final merged configuration
+        """
+        # Start with model-specific defaults from global config
+        config = self.global_config.get_model_defaults(self.model_type).copy()
+        
+        # Add preprocessing defaults based on runtime
+        detected_runtime = self._detect_runtime()
+        preprocessing_defaults = self.global_config.get_preprocessing_defaults(detected_runtime)
+        if preprocessing_defaults:
+            config.setdefault("preprocessing", {}).update(preprocessing_defaults)
+        
+        # Add runtime settings
+        config.update({
+            "device": self.global_config.get_device_name(self.device),
+            "runtime": detected_runtime
+        })
+        
+        # Merge with user configuration
+        if user_config:
+            self._merge_config(config, user_config)
+        
+        return config
+    
+    def _detect_runtime(self) -> str:
+        """Detect runtime based on model type and user preference"""
+        if self.runtime != "auto":
+            return self.runtime
+        
+        # Auto-detect based on model type
+        if "openvino" in self.model_type:
+            return "openvino"
+        elif "onnx" in self.model_type or self.model_path.suffix.lower() == '.onnx':
             return "onnx"
-        elif file_extension == '.xml':
-            # OpenVINO format
+        elif self.model_path.suffix.lower() == '.xml':
             return "openvino"
         else:
-            # Default to ONNX for unknown types
-            return "onnx"
+            return "onnx"  # Default fallback
+    
+    def _merge_config(self, target: Dict, source: Dict) -> None:
+        """Recursively merge source config into target config"""
+        for key, value in source.items():
+            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+                self._merge_config(target[key], value)
+            else:
+                target[key] = value
     
     def _create_inferencer(self) -> BaseInferencer:
         """Create appropriate inferencer based on model type"""
-        if self.model_type == "yolo":
+        if self.model_type == "yolo_onnx":
             return YOLOInferencer(self.model_path, self.config)
-        elif self.model_type == "onnx" or self.runtime == "onnx":
+        elif self.model_type == "yolo_openvino":
+            return YOLOOpenVINOInferencer(self.model_path, self.config)
+        elif self.model_type == "openvino":
+            return OpenVINOInferencer(self.model_path, self.config)
+        elif self.model_type == "onnx" or self._detect_runtime() == "onnx":
             return ONNXInferencer(self.model_path, self.config)
+        elif self._detect_runtime() == "openvino":
+            return OpenVINOInferencer(self.model_path, self.config)
         else:
             # Fallback to ONNX for unsupported types
             return ONNXInferencer(self.model_path, self.config)

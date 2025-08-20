@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  inference-api:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/app/models
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - PYTHONPATH=/app

@@ -225,37 +225,31 @@ def run(ctx: click.Context, model_path: Path, input_path: Path,
 
 
 @cli.command()
-@click.argument("model_path", type=click.Path(exists=True, path_type=Path))
-@click.option("--host", default="0.0.0.0", help="Host to bind the server")
-@click.option("--port", default=8080, type=int, help="Port to bind the server")
-@click.option("--workers", default=1, type=int, help="Number of worker processes")
-@click.option("--config", "-c", type=click.Path(exists=True, path_type=Path),
-              help="Configuration file path")
-@click.pass_context
-def serve(ctx: click.Context, model_path: Path, host: str, port: int, 
-          workers: int, config: Optional[Path]) -> None:
-    """Start FastAPI server for model inference"""
-    click.echo(f"Starting server for model: {model_path}")
-    click.echo(f"Server will run on {host}:{port} with {workers} workers")
-    
-    if config:
-        click.echo(f"Using config: {config}")
-    
-    # TODO: Implement server startup
-    click.echo("🚧 Server implementation coming soon!")
+def api() -> None:
+    """Add FastAPI server to existing project"""
+    try:
+        # Lazy import to avoid dependency issues
+        from .generators.template import TemplateGenerator
+        
+        generator = TemplateGenerator()
+        generator.add_api_layer(".")
+        click.echo("✅ Added FastAPI server to current project")
+        click.echo("   To run the server: uv run python -m src.server")
+        click.echo("   API docs available at: http://localhost:8080/docs")
+    except ImportError as e:
+        click.echo(f"❌ Failed to import template generator: {e}", err=True)
+        click.echo("Make sure all dependencies are installed", err=True)
+    except Exception as e:
+        click.echo(f"❌ Failed to add API server: {e}", err=True)
 
 
 @cli.command()
-@click.argument("model_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--tag", default="inferx:latest", help="Docker image tag")
 @click.option("--optimize", is_flag=True, help="Optimize Docker image size")
 @click.option("--compose", is_flag=True, help="Generate docker-compose.yml")
-@click.pass_context
-def docker(ctx: click.Context, model_path: Path, tag: str, 
-           optimize: bool, compose: bool) -> None:
-    """Generate Docker container for model deployment"""
-    click.echo(f"Generating Docker container for: {model_path}")
-    click.echo(f"Image tag: {tag}")
+def docker(tag: str, optimize: bool, compose: bool) -> None:
+    """Generate Docker container for current project"""
+    click.echo(f"Generating Docker container with tag: {tag}")
     
     if optimize:
         click.echo("Optimizing for minimal image size")
@@ -263,20 +257,122 @@ def docker(ctx: click.Context, model_path: Path, tag: str,
     if compose:
         click.echo("Generating docker-compose.yml")
     
-    # TODO: Implement Docker generation
-    click.echo("🚧 Docker generation implementation coming soon!")
+    try:
+        # Lazy import to avoid dependency issues
+        from .generators.template import TemplateGenerator
+        
+        generator = TemplateGenerator()
+        generator.add_docker_layer(".", tag=tag, optimize=optimize, compose=compose)
+        click.echo("✅ Added Docker container to current project")
+        click.echo("   To build: docker build -t {tag} .")
+        click.echo("   To run: docker run -p 8080:8080 {tag}")
+    except ImportError as e:
+        click.echo(f"❌ Failed to import template generator: {e}", err=True)
+        click.echo("Make sure all dependencies are installed", err=True)
+    except Exception as e:
+        click.echo(f"❌ Failed to add Docker container: {e}", err=True)
 
 
 @cli.command()
 @click.option("--template", type=click.Choice(["yolo", "anomalib", "classification"]),
               default="yolo", help="Project template to use")
+@click.option("--global", "global_config", is_flag=True, help="Initialize global user config")
 @click.pass_context
-def init(ctx: click.Context, template: str) -> None:
-    """Initialize new InferX project with template"""
-    click.echo(f"Initializing project with {template} template")
+def init(ctx: click.Context, template: str, global_config: bool) -> None:
+    """Initialize new InferX project with template or user config"""
+    if global_config:
+        # Initialize global user configuration
+        from .config import init_user_config
+        init_user_config()
+    else:
+        click.echo(f"Initializing project with {template} template")
+        # TODO: Implement project initialization
+        click.echo("🚧 Project initialization implementation coming soon!")
+
+
+@cli.command()
+@click.option("--model-type", required=True, type=click.Choice(["yolo", "yolo_openvino"]), help="Model type for template")
+@click.option("--name", required=True, help="Project name")
+@click.option("--device", type=click.Choice(["cpu", "gpu", "auto"]), default="auto", help="Device to run inference on")
+@click.option("--runtime", type=click.Choice(["onnx", "openvino", "auto"]), default="auto", help="Runtime engine to use")
+@click.option("--with-api", is_flag=True, help="Add FastAPI server to template")
+@click.option("--with-docker", is_flag=True, help="Add Docker container to template")
+@click.option("--config-path", type=click.Path(exists=True), help="Custom configuration file path")
+@click.option("--model-path", type=click.Path(exists=True), help="Path to model file to copy into template")
+def template(model_type: str, name: str, device: str, runtime: str, with_api: bool, with_docker: bool, config_path: Optional[str], model_path: Optional[str]) -> None:
+    """Generate inference project template with optional API and Docker layers"""
+    try:
+        # Lazy import to avoid dependency issues
+        from .generators.template import TemplateGenerator
+        
+        generator = TemplateGenerator()
+        
+        # Generate base template
+        generator.generate(
+            model_type, 
+            name, 
+            device=device, 
+            runtime=runtime,
+            config_path=config_path,
+            model_path=model_path
+        )
+        
+        # Add API layer if requested
+        if with_api:
+            generator.add_api_layer(name)
+        
+        # Add Docker layer if requested
+        if with_docker:
+            generator.add_docker_layer(name)
+        
+        click.echo(f"✅ Generated {model_type} project: {name}")
+        if with_api:
+            click.echo("   🌐 API server added")
+        if with_docker:
+            click.echo("   🐳 Docker container added")
+            
+    except ImportError as e:
+        click.echo(f"❌ Failed to import template generator: {e}", err=True)
+        click.echo("Make sure all dependencies are installed", err=True)
+    except Exception as e:
+        click.echo(f"❌ Template generation failed: {e}", err=True)
+
+
+@cli.command("config")
+@click.option("--show", is_flag=True, help="Show current configuration")
+@click.option("--validate", is_flag=True, help="Validate configuration")
+@click.option("--init", is_flag=True, help="Initialize user configuration")
+@click.option("--template", type=click.Path(), help="Create config template at specified path")
+@click.pass_context  
+def config_cmd(ctx: click.Context, show: bool, validate: bool, init: bool, template: Optional[str]) -> None:
+    """Configuration management commands"""
+    from .config import get_config, validate_config, create_user_config_template, init_user_config
     
-    # TODO: Implement project initialization
-    click.echo("🚧 Project initialization implementation coming soon!")
+    if init:
+        init_user_config()
+        return
+    
+    if template:
+        create_user_config_template(template)
+        click.echo(f"✅ Config template created at: {template}")
+        return
+    
+    # Load current config
+    config = get_config()
+    
+    if validate:
+        warnings = validate_config(config.to_dict())
+        if warnings:
+            click.echo("⚠️  Configuration warnings:")
+            for warning in warnings:
+                click.echo(f"   - {warning}")
+        else:
+            click.echo("✅ Configuration is valid")
+    
+    if show:
+        import json
+        click.echo("📋 Current configuration:")
+        click.echo(json.dumps(config.to_dict(), indent=2))
 
 
 def main() -> None:
