@@ -1,5 +1,5 @@
 # InferX - 4-in-1 ML Inference Toolkit (In Development Stage)
-ok
+
 > **"One tool, four ways to deploy your model: Library, CLI, Template, or Full Stack"**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
