@@ -282,8 +282,8 @@ def init(ctx: click.Context, template: str, global_config: bool) -> None:
     """Initialize new InferX project with template or user config"""
     if global_config:
         # Initialize global user configuration
-        from .config import init_user_config
-        init_user_config()
+        # TODO: Implement user config initialization with settings.py
+        click.echo("🚧 Global config initialization with settings.py coming soon!")
     else:
         click.echo(f"Initializing project with {template} template")
         # TODO: Implement project initialization
@@ -346,33 +346,38 @@ def template(model_type: str, name: str, device: str, runtime: str, with_api: bo
 @click.pass_context  
 def config_cmd(ctx: click.Context, show: bool, validate: bool, init: bool, template: Optional[str]) -> None:
     """Configuration management commands"""
-    from .config import get_config, validate_config, create_user_config_template, init_user_config
+    from .settings import get_inferx_settings
     
     if init:
-        init_user_config()
+        click.echo("🚧 User config initialization with settings.py coming soon!")
         return
     
     if template:
-        create_user_config_template(template)
-        click.echo(f"✅ Config template created at: {template}")
+        click.echo("🚧 Config template creation with settings.py coming soon!")
         return
     
-    # Load current config
-    config = get_config()
+    # Load current config with Pydantic validation
+    config = get_inferx_settings()
     
     if validate:
-        warnings = validate_config(config.to_dict())
-        if warnings:
-            click.echo("⚠️  Configuration warnings:")
-            for warning in warnings:
-                click.echo(f"   - {warning}")
-        else:
-            click.echo("✅ Configuration is valid")
+        click.echo("✅ Configuration loaded and validated with Pydantic")
+        click.echo(f"   YOLO input size: {config.yolo_input_size}")
+        click.echo(f"   Log level: {config.log_level}")
     
     if show:
         import json
         click.echo("📋 Current configuration:")
-        click.echo(json.dumps(config.to_dict(), indent=2))
+        # Show key settings
+        settings_dict = {
+            "yolo_settings": {
+                "input_size": config.yolo_input_size,
+                "confidence_threshold": config.yolo_confidence_threshold,
+                "nms_threshold": config.yolo_nms_threshold
+            },
+            "device_mapping": config.device_mapping,
+            "log_level": config.log_level.value
+        }
+        click.echo(json.dumps(settings_dict, indent=2))
 
 
 def main() -> None:

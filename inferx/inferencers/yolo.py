@@ -9,6 +9,13 @@ import logging
 
 from .base import BaseInferencer
 from ..utils import ImageProcessor
+from ..exceptions import (
+    ModelLoadError,
+    InferenceFailedError,
+    InputInvalidFormatError,
+    create_input_error,
+    ErrorCode
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +97,15 @@ class YOLOInferencer(BaseInferencer):
             
         except Exception as e:
             logger.error(f"Failed to load YOLO model {self.model_path}: {e}")
-            raise RuntimeError(f"Failed to load YOLO model: {e}")
+            raise ModelLoadError(
+                model_path=str(self.model_path),
+                runtime="onnx",
+                original_error=e,
+                context={
+                    "available_providers": ort.get_available_providers(),
+                    "model_extension": self.model_path.suffix
+                }
+            )
     
     def _letterbox(self, img: np.ndarray, new_shape: Tuple[int, int] = (640, 640)) -> Tuple[np.ndarray, Tuple[float, float], Tuple[int, int]]:
         """Letterbox resize image while maintaining aspect ratio
@@ -133,7 +148,11 @@ class YOLOInferencer(BaseInferencer):
         elif isinstance(input_data, np.ndarray):
             img = input_data
         else:
-            raise ValueError(f"Unsupported input data type: {type(input_data)}")
+            raise InputInvalidFormatError(
+                input_path=str(input_data) if hasattr(input_data, '__str__') else "unknown",
+                expected_formats=["image_path", "numpy_array"],
+                context={"actual_type": type(input_data).__name__}
+            )
         
         # Store original image dimensions
         self.img_height, self.img_width = img.shape[:2]
@@ -173,7 +192,14 @@ class YOLOInferencer(BaseInferencer):
             
         except Exception as e:
             logger.error(f"YOLO inference failed: {e}")
-            raise RuntimeError(f"YOLO inference failed: {e}")
+            raise InferenceFailedError(
+                model_type="yolo",
+                original_error=e,
+                context={
+                    "input_shape": preprocessed_data.shape if hasattr(preprocessed_data, 'shape') else "unknown",
+                    "model_providers": self.session.get_providers() if self.session else "unknown"
+                }
+            )
     
     def postprocess(self, model_outputs: List[np.ndarray], ratio: Tuple[float, float], pad: Tuple[int, int]) -> Dict[str, Any]:
         """YOLO postprocessing: NMS + format results
@@ -265,8 +291,7 @@ class YOLOInferencer(BaseInferencer):
         Returns:
             Dictionary containing detection results
         """
-        if self.session is None:
-            raise RuntimeError("Model not loaded. Call _load_model() first.")
+        # Model check is handled by parent class predict() method
         
         # Preprocess input
         preprocessed_data, ratio, pad = self.preprocess(input_data)

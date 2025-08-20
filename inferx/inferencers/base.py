@@ -4,6 +4,15 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
+import logging
+
+from ..exceptions import (
+    ModelError, 
+    InferenceError,
+    create_model_error,
+    create_inference_error,
+    ErrorCode
+)
 
 
 class BaseInferencer(ABC):
@@ -20,11 +29,22 @@ class BaseInferencer(ABC):
         Args:
             model_path: Path to the model file (.onnx, .xml, etc.)
             config: Optional configuration dictionary
+            
+        Raises:
+            ModelError: If model loading fails
         """
         self.model_path = Path(model_path)
         self.config = config or {}
         self.session = None
-        self._load_model()
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        
+        try:
+            self._load_model()
+        except Exception as e:
+            # Convert generic exceptions to specific model errors
+            if not isinstance(e, ModelError):
+                raise create_model_error(str(self.model_path), e, self._get_runtime_name())
+            raise
     
     @abstractmethod
     def _load_model(self) -> None:
@@ -72,7 +92,22 @@ class BaseInferencer(ABC):
             RuntimeError: If model is not loaded properly
         """
         if self.session is None:
-            raise RuntimeError("Model not loaded. Call _load_model() first.")
+            raise ModelError(
+                message="Model not loaded properly",
+                error_code=ErrorCode.MODEL_NOT_LOADED,
+                suggestions=[
+                    "Ensure model file exists and is valid",
+                    "Check model file permissions",
+                    "Verify runtime compatibility",
+                    "Try reloading the model"
+                ],
+                recovery_actions=[
+                    "Recreate the inferencer instance",
+                    "Use a different model file",
+                    "Check system resources"
+                ],
+                context={"model_path": str(self.model_path)}
+            )
         
         # Preprocess input
         preprocessed_data = self.preprocess(input_data)
@@ -93,11 +128,42 @@ class BaseInferencer(ABC):
             
         Returns:
             List of inference results
+            
+        Raises:
+            InferenceError: If batch processing fails
         """
+        if not input_batch:
+            raise InferenceError(
+                message="Empty input batch provided",
+                error_code=ErrorCode.BATCH_SIZE_MISMATCH,
+                suggestions=["Provide at least one input item"],
+                context={"batch_size": 0}
+            )
+        
         results = []
-        for input_data in input_batch:
-            result = self.predict(input_data)
-            results.append(result)
+        failed_items = []
+        
+        for i, input_data in enumerate(input_batch):
+            try:
+                result = self.predict(input_data)
+                results.append(result)
+            except Exception as e:
+                self.logger.warning(f"Failed to process batch item {i}: {e}")
+                failed_items.append({"index": i, "error": str(e)})
+                
+                # Add error recovery: continue with other items but log failures
+                results.append({
+                    "error": True,
+                    "error_message": str(e),
+                    "index": i
+                })
+        
+        # Log summary of batch processing
+        if failed_items:
+            self.logger.warning(
+                f"Batch processing completed with {len(failed_items)} failures out of {len(input_batch)} items"
+            )
+        
         return results
     
     @abstractmethod
@@ -127,3 +193,17 @@ class BaseInferencer(ABC):
             "status": "loaded",
             "config": self.config
         }
+    
+    def _get_runtime_name(self) -> str:
+        """Get runtime name for error reporting
+        
+        Returns:
+            Runtime name (e.g., 'onnx', 'openvino')
+        """
+        class_name = self.__class__.__name__.lower()
+        if "onnx" in class_name:
+            return "onnx"
+        elif "openvino" in class_name:
+            return "openvino"
+        else:
+            return "unknown"

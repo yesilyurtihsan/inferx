@@ -75,15 +75,6 @@ supported_formats:
     - ".onnx"         # ONNX models
   openvino:
     - ".xml"          # OpenVINO IR models (requires .bin file)
-  tensorflow:
-    - ".pb"           # TensorFlow frozen graph
-    - ".savedmodel"   # TensorFlow SavedModel format
-  pytorch:
-    - ".pt"           # PyTorch models
-    - ".pth"          # PyTorch models (alternative extension)
-  tensorrt:
-    - ".trt"          # TensorRT engines
-    - ".engine"       # TensorRT engines (alternative extension)
 
 # ================================================================
 # DEVICE MAPPING

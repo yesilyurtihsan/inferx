@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Tuple, Union, Optional, List, Any
 import logging
 
+from .exceptions import (
+    InputNotFoundError,
+    InputInvalidFormatError,
+    SecurityError,
+    PathTraversalError,
+    ErrorCode
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +36,33 @@ class ImageProcessor:
             ValueError: If image cannot be loaded
         """
         image_path = Path(image_path)
+        
+        # Security check: prevent path traversal
+        try:
+            resolved_path = image_path.resolve()
+            # Basic path traversal check
+            if ".." in str(image_path):
+                raise PathTraversalError(str(image_path))
+        except Exception as e:
+            if isinstance(e, PathTraversalError):
+                raise
+            raise SecurityError(
+                message=f"Security error while processing path: {image_path}",
+                error_code=ErrorCode.PATH_TRAVERSAL_DETECTED,
+                original_error=e,
+                context={"path": str(image_path)}
+            )
+        
         if not image_path.exists():
-            raise FileNotFoundError(f"Image file not found: {image_path}")
+            raise InputNotFoundError(str(image_path))
         
         image = cv2.imread(str(image_path))
         if image is None:
-            raise ValueError(f"Could not load image: {image_path}")
+            raise InputInvalidFormatError(
+                input_path=str(image_path),
+                expected_formats=["jpg", "jpeg", "png", "bmp", "tiff"],
+                context={"file_extension": image_path.suffix}
+            )
         
         logger.debug(f"Loaded image {image_path} with shape {image.shape}")
         return image

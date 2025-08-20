@@ -1,5 +1,9 @@
 .venv
 
+# Test data (keep README, ignore images)
+data/test_images/*.jpg
+data/test_images/*.png
+data/test_images/*.jpeg
 
 env/
 venv/

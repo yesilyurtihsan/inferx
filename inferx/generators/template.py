@@ -1,6 +1,8 @@
 import shutil
+import yaml
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
+from ..settings import validate_yolo_template_config
 
 class TemplateGenerator:
     def __init__(self):
@@ -29,6 +31,9 @@ class TemplateGenerator:
         # Copy model file if provided
         if "model_path" in options and options["model_path"]:
             self._copy_model_file(options["model_path"], model_type, project_path)
+        
+        # Validate generated configuration
+        self._validate_generated_config(project_path)
         
         print(f"✅ Created {model_type} template: {project_name}")
     
@@ -359,3 +364,22 @@ api = ["fastapi>=0.104.0", "uvicorn[standard]>=0.24.0", "python-multipart>=0.0.6
             )
         
         pyproject_file.write_text(content)
+    
+    def _validate_generated_config(self, project_path: Path):
+        """Validate generated template configuration with Pydantic"""
+        config_file = project_path / "config.yaml"
+        if not config_file.exists():
+            print("⚠️ Warning: config.yaml not found, skipping validation")
+            return
+        
+        try:
+            validated_config = validate_yolo_template_config(config_file)
+            print("✅ YOLO template configuration validated with Pydantic")
+            print(f"   Model: {validated_config.model_path}")
+            print(f"   Input size: {validated_config.input_size}")
+            print(f"   Confidence: {validated_config.confidence_threshold}")
+        except ImportError:
+            print("⚠️ pydantic-settings not available, skipping validation")
+        except Exception as e:
+            print(f"⚠️ Configuration validation warning: {e}")
+            print("   Template created but config may need adjustment")

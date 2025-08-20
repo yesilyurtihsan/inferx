@@ -18,8 +18,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from inferx import InferenceEngine
 
 
+def get_test_image(image_name="street_scene.jpg"):
+    """Get path to test image from data directory"""
+    # Get the project root directory
+    project_root = Path(__file__).parent.parent
+    test_image_path = project_root / "data" / "test_images" / image_name
+    
+    if test_image_path.exists():
+        print(f"✅ Using real test image: {test_image_path}")
+        return test_image_path
+    else:
+        print(f"⚠️  Test image not found: {test_image_path}")
+        print("   Run: mkdir -p data/test_images && curl -o data/test_images/street_scene.jpg 'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=800&h=600&fit=crop'")
+        
+        # Fallback: create dummy image
+        return create_dummy_image(Path("dummy_image.jpg"))
+
 def create_dummy_image(output_path: Path, size=(640, 480)):
-    """Create a dummy test image"""
+    """Create a dummy test image as fallback"""
     # Create random test image
     image = np.random.randint(0, 255, (size[1], size[0], 3), dtype=np.uint8)
     
@@ -28,7 +44,7 @@ def create_dummy_image(output_path: Path, size=(640, 480)):
     cv2.circle(image, (400, 300), 50, (0, 0, 255), -1)
     
     cv2.imwrite(str(output_path), image)
-    print(f"✅ Created test image: {output_path}")
+    print(f"✅ Created fallback test image: {output_path}")
     return output_path
 
 
@@ -45,8 +61,8 @@ def example_basic_onnx_inference():
             model_path = temp_path / "test_model.onnx"
             model_path.touch()
             
-            # Create test image
-            image_path = create_dummy_image(temp_path / "test_image.jpg")
+            # Use real test image
+            image_path = get_test_image("street_scene.jpg")
             
             print(f"📄 Model: {model_path}")
             print(f"🖼️  Image: {image_path}")
@@ -85,8 +101,8 @@ def example_openvino_inference():
             xml_path.touch()
             bin_path.touch()
             
-            # Create test image
-            image_path = create_dummy_image(temp_path / "test_image.jpg")
+            # Use real test image
+            image_path = get_test_image("street_scene.jpg")
             
             print(f"📄 Model: {xml_path}")
             print(f"🖼️  Image: {image_path}")
@@ -129,8 +145,8 @@ def example_yolo_detection():
             yolo_openvino.touch()
             (temp_path / "yolov8n.bin").touch()  # OpenVINO needs .bin file
             
-            # Create test image with objects
-            image_path = create_dummy_image(temp_path / "street_scene.jpg", (1280, 720))
+            # Use real test image with objects
+            image_path = get_test_image("cars_traffic.jpg")
             
             print(f"📄 YOLO ONNX: {yolo_onnx}")
             print(f"📄 YOLO OpenVINO: {yolo_openvino}")
@@ -184,9 +200,11 @@ def example_batch_processing():
             image_dir = temp_path / "images"
             image_dir.mkdir()
             
+            # Use real test images for batch processing
+            available_images = ["street_scene.jpg", "person_bicycle.jpg", "cars_traffic.jpg"]
             image_paths = []
-            for i in range(3):
-                img_path = create_dummy_image(image_dir / f"image_{i:03d}.jpg")
+            for img_name in available_images:
+                img_path = get_test_image(img_name)
                 image_paths.append(img_path)
             
             print(f"📄 Model: {model_path}")
@@ -228,7 +246,7 @@ def example_configuration_usage():
             # Create config file
             config_path = temp_path / "custom_config.yaml"
             config_content = """
-# Custom InferX Configuration
+# Custom InferX Configuration with Pydantic Settings
 model_detection:
   yolo_keywords:
     - "yolo"
@@ -240,17 +258,16 @@ device_mapping:
 model_defaults:
   yolo:
     confidence_threshold: 0.3    # Lower threshold for more detections
-    input_size: 1024            # Higher resolution
+    input_size: 1024            # Higher resolution (must be divisible by 32)
     class_names:
       - "person"
-      - "vehicle"
+      - "vehicle" 
       - "custom_object"
 
-performance_presets:
-  production:
-    openvino:
-      performance_hint: "THROUGHPUT"
-      num_streams: 0
+logging:
+  level: "INFO"
+  model_loading: true
+  inference_timing: true
 """
             
             with open(config_path, 'w') as f:
@@ -276,9 +293,9 @@ performance_presets:
    # Method 4: User global config
    # inferx config --init  # Creates ~/.inferx/config.yaml
    
-   # Method 5: Config management
-   # inferx config --show      # View current config
-   # inferx config --validate  # Check for issues
+   # Method 5: Config management with Pydantic validation
+   # inferx config --show      # View current config with validation
+   # inferx config --validate  # Pydantic type checking
 """)
             
             print("✅ Configuration usage patterns demonstrated")

@@ -18,7 +18,7 @@ import json
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from inferx import InferenceEngine
-from inferx.config import get_config
+from inferx.settings import get_inferx_settings
 
 
 def create_test_image_with_objects(output_path: Path, size=(1280, 720)):

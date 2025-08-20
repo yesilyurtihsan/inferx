@@ -8,7 +8,9 @@ from .inferencers.onnx_inferencer import ONNXInferencer
 from .inferencers.openvino_inferencer import OpenVINOInferencer
 from .inferencers.yolo import YOLOInferencer
 from .inferencers.yolo_openvino import YOLOOpenVINOInferencer
-from .config import get_config, InferXConfig
+from .settings import get_inferx_settings
+from .recovery import with_model_loading_retry, with_inference_retry
+from .exceptions import ModelError, InferenceError, ErrorCode
 
 
 class InferenceEngine:
@@ -41,8 +43,8 @@ class InferenceEngine:
         self.device = device
         self.runtime = runtime
         
-        # Load global configuration
-        self.global_config = get_config(config_path)
+        # Load global configuration with Pydantic validation
+        self.global_config = get_inferx_settings()
         
         # Detect model type using configuration
         self.model_type = model_type or self.global_config.detect_model_type(
@@ -107,30 +109,60 @@ class InferenceEngine:
             else:
                 target[key] = value
     
+    @with_model_loading_retry()
     def _create_inferencer(self) -> BaseInferencer:
-        """Create appropriate inferencer based on model type"""
-        if self.model_type == "yolo_onnx":
-            return YOLOInferencer(self.model_path, self.config)
-        elif self.model_type == "yolo_openvino":
-            return YOLOOpenVINOInferencer(self.model_path, self.config)
-        elif self.model_type == "openvino":
-            return OpenVINOInferencer(self.model_path, self.config)
-        elif self.model_type == "onnx" or self._detect_runtime() == "onnx":
-            return ONNXInferencer(self.model_path, self.config)
-        elif self._detect_runtime() == "openvino":
-            return OpenVINOInferencer(self.model_path, self.config)
-        else:
-            # Fallback to ONNX for unsupported types
-            return ONNXInferencer(self.model_path, self.config)
+        """Create appropriate inferencer based on model type with retry and fallback"""
+        try:
+            if self.model_type == "yolo_onnx":
+                return YOLOInferencer(self.model_path, self.config)
+            elif self.model_type == "yolo_openvino":
+                return YOLOOpenVINOInferencer(self.model_path, self.config)
+            elif self.model_type == "openvino":
+                return OpenVINOInferencer(self.model_path, self.config)
+            elif self.model_type == "onnx" or self._detect_runtime() == "onnx":
+                return ONNXInferencer(self.model_path, self.config)
+            elif self._detect_runtime() == "openvino":
+                return OpenVINOInferencer(self.model_path, self.config)
+            else:
+                # Fallback to ONNX for unsupported types
+                return ONNXInferencer(self.model_path, self.config)
+        except Exception as e:
+            # If all attempts fail, raise a meaningful error
+            raise ModelError(
+                message=f"Failed to create inferencer for model type '{self.model_type}'",
+                error_code=ErrorCode.MODEL_LOAD_FAILED,
+                suggestions=[
+                    "Check if model file exists and is readable",
+                    "Verify model format is supported",
+                    "Try different runtime (onnx/openvino)",
+                    "Check system requirements and dependencies"
+                ],
+                recovery_actions=[
+                    "Use auto model type detection",
+                    "Convert model to different format",
+                    "Check available runtimes"
+                ],
+                original_error=e,
+                context={
+                    "model_path": str(self.model_path),
+                    "model_type": self.model_type,
+                    "runtime": self.runtime,
+                    "device": self.device
+                }
+            )
     
+    @with_inference_retry()
     def predict(self, input_data: Any) -> Dict[str, Any]:
-        """Run inference on single input
+        """Run inference on single input with retry and error recovery
         
         Args:
             input_data: Input data (image path, array, etc.)
             
         Returns:
             Inference results
+            
+        Raises:
+            InferenceError: If inference fails after all retries
         """
         return self.inferencer.predict(input_data)
     
