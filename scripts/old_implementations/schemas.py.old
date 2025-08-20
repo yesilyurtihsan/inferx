@@ -1,0 +1,641 @@
+"""
+Pydantic Schemas for InferX Configuration Validation
+
+This module provides type-safe schemas for:
+1. InferX Core Configuration (default.yaml, user configs)
+2. Template Project Configuration (generated template config.yaml)
+"""
+
+from pydantic import BaseModel, BaseSettings, Field, validator, root_validator
+from typing import List, Dict, Optional, Union, Any, Literal
+from enum import Enum
+from pathlib import Path
+import yaml
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# ENUMS AND COMMON TYPES
+# =============================================================================
+
+class DeviceType(str, Enum):
+    AUTO = "auto"
+    CPU = "cpu"
+    GPU = "gpu"
+    CUDA = "cuda"
+    OPENCL = "opencl"
+    MYRIAD = "myriad"
+    HDDL = "hddl"
+    NPU = "npu"
+    JETSON = "jetson"
+    RPI = "rpi"
+
+
+class RuntimeType(str, Enum):
+    AUTO = "auto"
+    ONNX = "onnx"
+    OPENVINO = "openvino"
+
+
+class LogLevel(str, Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+class OutputFormat(str, Enum):
+    JSON = "json"
+    YAML = "yaml"
+    CSV = "csv"
+
+
+class ModelType(str, Enum):
+    YOLO = "yolo"
+    YOLO_OPENVINO = "yolo_openvino"
+    CLASSIFICATION = "classification"
+    ANOMALIB = "anomalib"
+    SEGMENTATION = "segmentation"
+    CUSTOM = "custom"
+
+
+# =============================================================================
+# INFERX CORE CONFIGURATION SCHEMAS (for default.yaml, user configs)
+# =============================================================================
+
+class ModelDetectionSchema(BaseModel):
+    """Model type detection keywords from default.yaml"""
+    
+    yolo_keywords: List[str] = Field(
+        default=["yolo", "yolov", "yolov8", "yolov11", "ultralytics"],
+        description="Keywords for YOLO model detection"
+    )
+    classification_keywords: List[str] = Field(
+        default=["resnet", "efficientnet", "mobilenet", "classifier"],
+        description="Keywords for classification model detection"
+    )
+    anomalib_keywords: List[str] = Field(
+        default=["anomalib", "padim", "patchcore", "anomaly"],
+        description="Keywords for anomaly detection model detection"
+    )
+    segmentation_keywords: List[str] = Field(
+        default=["segment", "unet", "deeplabv3", "segformer"],
+        description="Keywords for segmentation model detection"
+    )
+
+
+class DeviceMappingSchema(BaseModel):
+    """Device name mappings from default.yaml"""
+    
+    auto: str = Field(default="AUTO", description="Auto device selection")
+    cpu: str = Field(default="CPU", description="CPU device")
+    gpu: str = Field(default="GPU", description="GPU device")
+    cuda: str = Field(default="GPU", description="NVIDIA CUDA")
+    opencl: str = Field(default="GPU", description="OpenCL")
+    myriad: str = Field(default="MYRIAD", description="Intel Myriad VPU")
+    hddl: str = Field(default="HDDL", description="Intel HDDL")
+    npu: str = Field(default="NPU", description="Neural Processing Unit")
+    jetson: str = Field(default="GPU", description="NVIDIA Jetson")
+    rpi: str = Field(default="CPU", description="Raspberry Pi")
+
+
+class YOLODefaultsSchema(BaseModel):
+    """YOLO model defaults from default.yaml"""
+    
+    input_size: int = Field(
+        default=640,
+        gt=0,
+        description="Input image size"
+    )
+    confidence_threshold: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold for detections"
+    )
+    nms_threshold: float = Field(
+        default=0.45,
+        ge=0.0,
+        le=1.0,
+        description="Non-Maximum Suppression threshold"
+    )
+    max_detections: int = Field(
+        default=100,
+        gt=0,
+        le=10000,
+        description="Maximum number of detections"
+    )
+    class_names: List[str] = Field(
+        default_factory=lambda: [
+            "person", "bicycle", "car", "motorcycle", "airplane", "bus",
+            "train", "truck", "boat", "traffic light", "fire hydrant"
+        ],
+        description="Default COCO class names"
+    )
+    
+    @validator('input_size')
+    def validate_input_size(cls, v):
+        if v % 32 != 0:
+            raise ValueError('YOLO input size must be divisible by 32')
+        return v
+
+
+class ClassificationDefaultsSchema(BaseModel):
+    """Classification model defaults from default.yaml"""
+    
+    input_size: List[int] = Field(
+        default=[224, 224],
+        min_items=2,
+        max_items=2,
+        description="Input image size [height, width]"
+    )
+    top_k: int = Field(
+        default=5,
+        gt=0,
+        le=100,
+        description="Return top-k predictions"
+    )
+    normalize: Dict[str, List[float]] = Field(
+        default={
+            "mean": [0.485, 0.456, 0.406],
+            "std": [0.229, 0.224, 0.225]
+        },
+        description="ImageNet normalization parameters"
+    )
+    class_names: List[str] = Field(
+        default_factory=list,
+        description="Class names (empty = auto-detect)"
+    )
+    
+    @validator('normalize')
+    def validate_normalize(cls, v):
+        if 'mean' in v and len(v['mean']) != 3:
+            raise ValueError('Mean must have 3 values (RGB)')
+        if 'std' in v and len(v['std']) != 3:
+            raise ValueError('Std must have 3 values (RGB)')
+        return v
+
+
+class ModelDefaultsSchema(BaseModel):
+    """All model defaults from default.yaml"""
+    
+    yolo: YOLODefaultsSchema = Field(default_factory=YOLODefaultsSchema)
+    classification: ClassificationDefaultsSchema = Field(default_factory=ClassificationDefaultsSchema)
+
+
+class PreprocessingDefaultsSchema(BaseModel):
+    """Preprocessing defaults for different runtimes from default.yaml"""
+    
+    onnx: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "target_size": [224, 224],
+            "normalize": True,
+            "color_format": "RGB",
+            "mean": [0.485, 0.456, 0.406],
+            "std": [0.229, 0.224, 0.225],
+            "maintain_aspect_ratio": True
+        }
+    )
+    openvino: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "target_size": [224, 224],
+            "normalize": True,
+            "color_format": "RGB",
+            "mean": [0.485, 0.456, 0.406],
+            "std": [0.229, 0.224, 0.225],
+            "maintain_aspect_ratio": True
+        }
+    )
+
+
+class RuntimePreferencesSchema(BaseModel):
+    """Runtime preferences and optimizations from default.yaml"""
+    
+    onnx: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "providers": {
+                "gpu": ["CUDAExecutionProvider", "OpenVINOExecutionProvider", "CPUExecutionProvider"],
+                "cpu": ["CPUExecutionProvider"],
+                "auto": ["CUDAExecutionProvider", "OpenVINOExecutionProvider", "CPUExecutionProvider"]
+            },
+            "session_options": {
+                "graph_optimization_level": "ORT_ENABLE_ALL",
+                "inter_op_num_threads": 0,
+                "intra_op_num_threads": 0,
+                "enable_profiling": False
+            }
+        }
+    )
+    openvino: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "performance_hints": {
+                "throughput": "THROUGHPUT",
+                "latency": "LATENCY"
+            },
+            "device_optimizations": {
+                "CPU": {"CPU_BIND_THREAD": "YES"},
+                "GPU": {"GPU_THROUGHPUT_STREAMS": "GPU_THROUGHPUT_AUTO"}
+            }
+        }
+    )
+
+
+class LoggingSchema(BaseModel):
+    """Logging configuration from default.yaml"""
+    
+    level: LogLevel = Field(default=LogLevel.INFO)
+    format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    categories: Dict[str, bool] = Field(
+        default_factory=lambda: {
+            "model_loading": True,
+            "inference_timing": True,
+            "preprocessing": False,
+            "postprocessing": False,
+            "device_info": True
+        }
+    )
+
+
+class InferXCoreConfigSchema(BaseSettings):
+    """
+    Main InferX Core Configuration Schema
+    
+    Validates default.yaml and user configuration files
+    Used by runtime.py for config loading
+    """
+    
+    # Core sections
+    model_detection: ModelDetectionSchema = Field(default_factory=ModelDetectionSchema)
+    device_mapping: DeviceMappingSchema = Field(default_factory=DeviceMappingSchema)
+    model_defaults: ModelDefaultsSchema = Field(default_factory=ModelDefaultsSchema)
+    preprocessing_defaults: PreprocessingDefaultsSchema = Field(default_factory=PreprocessingDefaultsSchema)
+    runtime_preferences: RuntimePreferencesSchema = Field(default_factory=RuntimePreferencesSchema)
+    logging: LoggingSchema = Field(default_factory=LoggingSchema)
+    
+    # Advanced settings
+    supported_formats: Dict[str, List[str]] = Field(
+        default_factory=lambda: {
+            "onnx": [".onnx"],
+            "openvino": [".xml"],
+            "pytorch": [".pt", ".pth"],
+            "tensorrt": [".trt", ".engine"]
+        }
+    )
+    
+    class Config:
+        env_prefix = "INFERX_"
+        extra = "allow"  # Allow extra fields for backward compatibility
+        use_enum_values = True
+
+
+# =============================================================================
+# TEMPLATE PROJECT CONFIGURATION SCHEMAS (for generated template config.yaml)
+# =============================================================================
+
+class TemplateModelSchema(BaseModel):
+    """Model section in template config.yaml"""
+    
+    path: str = Field(
+        description="Path to model file (e.g., 'models/yolo_model.onnx')"
+    )
+    type: ModelType = Field(
+        description="Model type (yolo, classification, etc.)"
+    )
+    
+    @validator('path')
+    def validate_path(cls, v):
+        if not v or v.strip() == "":
+            raise ValueError('Model path cannot be empty')
+        # Check if path looks reasonable (contains model file)
+        if not any(ext in v.lower() for ext in ['.onnx', '.xml', '.pt', '.pth']):
+            logger.warning(f"Model path '{v}' doesn't contain common model file extension")
+        return v
+
+
+class TemplateInferenceSchema(BaseModel):
+    """Inference section in template config.yaml"""
+    
+    device: DeviceType = Field(
+        default=DeviceType.AUTO,
+        description="Inference device"
+    )
+    runtime: RuntimeType = Field(
+        default=RuntimeType.AUTO,
+        description="Inference runtime"
+    )
+    confidence_threshold: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold for detections"
+    )
+    nms_threshold: Optional[float] = Field(
+        default=0.45,
+        ge=0.0,
+        le=1.0,
+        description="NMS threshold (for YOLO models)"
+    )
+    input_size: int = Field(
+        default=640,
+        gt=0,
+        description="Input image size"
+    )
+    batch_size: Optional[int] = Field(
+        default=1,
+        gt=0,
+        le=64,
+        description="Batch size for inference"
+    )
+    
+    @validator('input_size')
+    def validate_input_size(cls, v):
+        if v % 32 != 0:
+            logger.warning(f"Input size {v} is not divisible by 32, may cause issues with some models")
+        return v
+
+
+class TemplatePreprocessingSchema(BaseModel):
+    """Preprocessing section in template config.yaml"""
+    
+    target_size: List[int] = Field(
+        default=[640, 640],
+        min_items=2,
+        max_items=2,
+        description="Target preprocessing size [height, width]"
+    )
+    normalize: bool = Field(
+        default=True,
+        description="Apply normalization"
+    )
+    color_format: Literal["RGB", "BGR"] = Field(
+        default="RGB",
+        description="Color format"
+    )
+    maintain_aspect_ratio: bool = Field(
+        default=True,
+        description="Maintain aspect ratio during resize"
+    )
+    mean: Optional[List[float]] = Field(
+        default=[0.485, 0.456, 0.406],
+        description="Normalization mean values"
+    )
+    std: Optional[List[float]] = Field(
+        default=[0.229, 0.224, 0.225],
+        description="Normalization std values"
+    )
+    
+    @validator('target_size')
+    def validate_target_size(cls, v):
+        if any(size <= 0 for size in v):
+            raise ValueError('Target size dimensions must be positive')
+        return v
+    
+    @validator('mean')
+    def validate_mean(cls, v):
+        if v and len(v) != 3:
+            raise ValueError('Mean must have 3 values (RGB/BGR)')
+        return v
+    
+    @validator('std')
+    def validate_std(cls, v):
+        if v and len(v) != 3:
+            raise ValueError('Std must have 3 values (RGB/BGR)')
+        if v and any(s <= 0 for s in v):
+            raise ValueError('Std values must be positive')
+        return v
+
+
+class TemplateProjectConfigSchema(BaseModel):
+    """
+    Template Project Configuration Schema
+    
+    Validates config.yaml files in generated template projects
+    Used by template generation system
+    """
+    
+    model: TemplateModelSchema = Field(
+        description="Model configuration"
+    )
+    inference: TemplateInferenceSchema = Field(
+        default_factory=TemplateInferenceSchema,
+        description="Inference configuration"
+    )
+    preprocessing: TemplatePreprocessingSchema = Field(
+        default_factory=TemplatePreprocessingSchema,
+        description="Preprocessing configuration"
+    )
+    
+    # Optional sections
+    postprocessing: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Postprocessing configuration (model-specific)"
+    )
+    logging: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Logging configuration override"
+    )
+    
+    @root_validator
+    def validate_model_inference_consistency(cls, values):
+        """Validate consistency between model type and inference settings"""
+        model = values.get('model')
+        inference = values.get('inference')
+        
+        if not model or not inference:
+            return values
+        
+        # YOLO-specific validations
+        if model.type in [ModelType.YOLO, ModelType.YOLO_OPENVINO]:
+            if inference.nms_threshold is None:
+                raise ValueError('YOLO models require nms_threshold in inference section')
+            
+            # YOLO input size validation
+            if inference.input_size % 32 != 0:
+                raise ValueError('YOLO models require input_size divisible by 32')
+        
+        # OpenVINO model type validation
+        if model.type == ModelType.YOLO_OPENVINO:
+            if not model.path.endswith('.xml'):
+                raise ValueError('YOLO OpenVINO models should have .xml extension')
+        
+        return values
+    
+    class Config:
+        extra = "allow"  # Allow extra fields for extensibility
+        use_enum_values = True
+
+
+# =============================================================================
+# VALIDATION FUNCTIONS
+# =============================================================================
+
+def validate_core_config(config_data: Dict[str, Any], config_path: Optional[str] = None) -> InferXCoreConfigSchema:
+    """
+    Validate InferX core configuration (default.yaml, user configs)
+    
+    Args:
+        config_data: Configuration dictionary
+        config_path: Path to config file (for error messages)
+        
+    Returns:
+        Validated configuration schema
+        
+    Raises:
+        ValidationError: If configuration is invalid
+    """
+    try:
+        return InferXCoreConfigSchema(**config_data)
+    except Exception as e:
+        config_location = f" in {config_path}" if config_path else ""
+        logger.error(f"Core configuration validation failed{config_location}: {e}")
+        raise
+
+
+def validate_template_config(config_data: Dict[str, Any], template_path: Optional[str] = None) -> TemplateProjectConfigSchema:
+    """
+    Validate template project configuration (generated template config.yaml)
+    
+    Args:
+        config_data: Configuration dictionary
+        template_path: Path to template config file (for error messages)
+        
+    Returns:
+        Validated template configuration schema
+        
+    Raises:
+        ValidationError: If configuration is invalid
+    """
+    try:
+        return TemplateProjectConfigSchema(**config_data)
+    except Exception as e:
+        template_location = f" in {template_path}" if template_path else ""
+        logger.error(f"Template configuration validation failed{template_location}: {e}")
+        raise
+
+
+def load_and_validate_core_config(config_path: Union[str, Path]) -> InferXCoreConfigSchema:
+    """
+    Load and validate InferX core configuration from file
+    
+    Args:
+        config_path: Path to configuration file
+        
+    Returns:
+        Validated configuration schema
+    """
+    config_path = Path(config_path)
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        return validate_core_config(config_data, str(config_path))
+    
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {config_path}: {e}")
+
+
+def load_and_validate_template_config(config_path: Union[str, Path]) -> TemplateProjectConfigSchema:
+    """
+    Load and validate template project configuration from file
+    
+    Args:
+        config_path: Path to template configuration file
+        
+    Returns:
+        Validated template configuration schema
+    """
+    config_path = Path(config_path)
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        return validate_template_config(config_data, str(config_path))
+    
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Template configuration file not found: {config_path}")
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {config_path}: {e}")
+
+
+# =============================================================================
+# SCHEMA GENERATION UTILITIES
+# =============================================================================
+
+def generate_core_config_schema() -> Dict[str, Any]:
+    """Generate JSON schema for core configuration"""
+    return InferXCoreConfigSchema.schema()
+
+
+def generate_template_config_schema() -> Dict[str, Any]:
+    """Generate JSON schema for template configuration"""
+    return TemplateProjectConfigSchema.schema()
+
+
+def save_schemas(output_dir: Union[str, Path]):
+    """
+    Save JSON schemas to files for documentation/IDE support
+    
+    Args:
+        output_dir: Directory to save schema files
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    
+    # Save core config schema
+    core_schema = generate_core_config_schema()
+    with open(output_dir / "inferx_core_config_schema.json", 'w') as f:
+        import json
+        json.dump(core_schema, f, indent=2)
+    
+    # Save template config schema
+    template_schema = generate_template_config_schema()
+    with open(output_dir / "template_project_config_schema.json", 'w') as f:
+        import json
+        json.dump(template_schema, f, indent=2)
+    
+    logger.info(f"Schemas saved to {output_dir}")
+
+
+if __name__ == "__main__":
+    # Demo usage
+    print("InferX Configuration Schemas")
+    print("=" * 50)
+    
+    # Generate schemas
+    core_schema = generate_core_config_schema()
+    template_schema = generate_template_config_schema()
+    
+    print(f"Core config schema properties: {len(core_schema['properties'])}")
+    print(f"Template config schema properties: {len(template_schema['properties'])}")
+    
+    # Example validation
+    sample_template_config = {
+        "model": {
+            "path": "models/yolo_model.onnx",
+            "type": "yolo"
+        },
+        "inference": {
+            "device": "auto",
+            "confidence_threshold": 0.25,
+            "input_size": 640
+        },
+        "preprocessing": {
+            "target_size": [640, 640],
+            "normalize": True
+        }
+    }
+    
+    try:
+        validated = validate_template_config(sample_template_config)
+        print("✅ Template config validation successful")
+    except Exception as e:
+        print(f"❌ Template config validation failed: {e}")
