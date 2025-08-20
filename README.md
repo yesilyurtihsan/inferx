@@ -7,16 +7,6 @@ ok
 [![ONNX](https://img.shields.io/badge/ONNX-supported-green.svg)](https://onnx.ai/)
 [![OpenVINO](https://img.shields.io/badge/OpenVINO-supported-blue.svg)](https://docs.openvino.ai/)
 
-✅ **CORE FEATURES PRODUCTION READY** - Library and CLI fully functional
-
-InferX is a 4-in-1 toolkit that works as:
-1. **📦 Library** - Import and use directly in your Python code
-2. **⚡ CLI Tool** - Run models directly from command line
-3. **🏗️ Template Generator** - Generate ready-to-use project templates (✅ YOLO template available)
-4. **🚢 Full Stack Solution** - Generate API servers and Docker containers
-
-Unlike heavy frameworks, InferX gives you clean code with minimal dependencies that you own completely.
-
 ## 🎯 Philosophy
 
 **4 ways to use InferX - Choose what fits your needs:**
