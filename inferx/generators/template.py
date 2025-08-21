@@ -333,7 +333,7 @@ class TemplateGenerator:
             if "runtime:" not in config_content:
                 config_content = config_content.replace(
                     "inference:",
-                    "inference:\\n  runtime: \\"auto\\""
+                    "inference:\\n  runtime: \"auto\"",
                 )
             config_content = config_content.replace(
                 'runtime: "auto"',
