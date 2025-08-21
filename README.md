@@ -44,7 +44,7 @@ inferx run model.xml images/ --output results.json --runtime openvino
 inferx run model.xml image.jpg --device myriad --runtime openvino
 ```
 
-#### **3. Template Generation (Project scaffolding)**
+### **3. Template Generation (Project scaffolding)**
 ```bash
 # Generate a complete standalone project
 inferx template yolo --name my-detector
@@ -67,7 +67,7 @@ inferx template yolo_openvino --name my-detector --model-path /path/to/my/model.
 ### 🚢 **4. Full Stack Generation (API + Docker)**
 ```bash
 # Start with template
-inferx template yolo --name my-detector
+inferx template --model-type yolo --name my-detector
 cd my-detector
 
 # Add API server
